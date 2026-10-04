@@ -30,8 +30,10 @@ Rules:
 6. After launching/opening something, verify it before repeating the action.
 7. Break complex goals into one action at a time.
 8. For Windows apps use launch_app, not a web URL.
-9. Only say done when the goal is actually supported by evidence.
-10. If the tools cannot complete the goal, say fail.
+9. For coding tasks, prefer developer actions (list_files, read_file, write_file, run_command, test_python) over GUI typing.
+10. When a command fails, inspect the output, change the relevant files, and run the test again.
+11. Only say done when the goal is actually supported by evidence.
+12. If the tools cannot complete the goal, say fail.
 
 Common app mappings:
 Calculator -> calc
@@ -208,7 +210,9 @@ Choose ONLY the next single action. Base the decision on the current observation
 
     def _validate_decision(self, decision: Dict[str, Any]) -> Dict[str, Any]:
         allowed = {"open_url","launch_app","click_text","click","double_click","right_click","drag",
-                   "type","press_key","hotkey","scroll","wait","shell","done","fail"}
+                   "type","press_key","hotkey","scroll","wait","shell",
+                   "list_files","read_file","write_file","append_file","make_directory",
+                   "copy_file","move_file","run_command","test_python","done","fail"}
         action = decision.get("action")
         if action not in allowed:
             raise ValueError(f"Brain returned unsupported action: {action!r}")
