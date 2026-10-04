@@ -32,9 +32,18 @@ IMPORTANT:
 5. Use exact click coordinates only when the screen observation gives a useful coordinate or when there is no text target.
 6. After opening an app or URL, normally wait briefly, then inspect the new screen before acting.
 7. Break complex goals into small steps. Do not try to perform multiple actions in one response.
-8. When the goal is genuinely complete, output "done".
-9. If the goal cannot be completed with the available actions, output "fail" and explain why.
-10. Never claim that something happened unless the observation/history supports it.
+8. For a Windows desktop application, use launch_app rather than open_url. Examples:
+   - Calculator -> launch_app {"app":"calc"}
+   - Notepad -> launch_app {"app":"notepad"}
+   - Paint -> launch_app {"app":"mspaint"}
+   - Command Prompt -> launch_app {"app":"cmd"}
+   - PowerShell -> launch_app {"app":"powershell"}
+   - File Explorer -> launch_app {"app":"explorer"}
+   Never open a Microsoft Store or other web URL just because an app has a webpage.
+9. After an action, use the post-action observation in history to decide whether it worked. If the expected UI/window is visible, do not repeat the action.
+10. When the goal is genuinely complete, output "done".
+11. If the goal cannot be completed with the available actions, output "fail" and explain why.
+12. Never claim that something happened unless the observation/history supports it.
 
 Always output ONLY valid JSON:
 {
@@ -112,6 +121,12 @@ class AgentBrain:
                 lines.append(
                     f"[{h.get('step','?')}] {action} {json.dumps(params, ensure_ascii=False)} | result: {result}"
                 )
+            post = h.get("post_action_observation")
+            if post:
+                vision = str(post.get("vision", ""))[:500]
+                windows_after = post.get("windows", [])
+                lines.append(f"    post-action verification: windows={json.dumps(windows_after, ensure_ascii=False)}")
+                lines.append(f"    post-action vision: {vision}")
             if thought:
                 lines.append(f"    previous thought: {thought}")
 
