@@ -51,7 +51,7 @@ Always output ONLY valid JSON:
 class AgentBrain:
     def __init__(self, model_name: Optional[str] = None):
         self.model_name = model_name or config.default_planner_model
-        self.client = httpx.Client(timeout=45.0)
+        self.client = httpx.Client(timeout=httpx.Timeout(25.0, connect=5.0))
 
     def get_active_window(self) -> str:
         if not HAS_WIN32:
@@ -162,7 +162,17 @@ class AgentBrain:
 
         open_windows = self.get_open_windows()
         history_text = self._build_history_summary(history)
-        observation = screen_summary or self._build_screen_observation(screen_elements)
+        # Coding tasks do not need hundreds of OCR entries. Keeping the prompt small
+        # makes local models respond much faster.
+        developer_goal = bool(re.search(
+            r"\b(create|build|write|make|edit|modify|fix|debug|test|code|python|file|app|project|script|program)\b",
+            goal, re.IGNORECASE
+        ))
+        if developer_goal:
+            observation = "Developer task: prioritize filesystem and terminal tools. Screen details are secondary."
+        else:
+            compact_elements = (screen_elements or [])[:50]
+            observation = screen_summary or self._build_screen_observation(compact_elements)
 
         user_prompt = f"""USER GOAL:
 {goal}
@@ -189,7 +199,7 @@ Choose ONLY the next single action. Base the decision on the current observation
             "stream": False,
             "format": "json",
             "keep_alive": "10m",
-            "options": {"temperature": 0.1, "top_p": 0.85, "repeat_penalty": 1.1},
+            "options": {"temperature": 0.1, "top_p": 0.85, "repeat_penalty": 1.1, "num_predict": 160},
         }
 
         try:
@@ -198,9 +208,9 @@ Choose ONLY the next single action. Base the decision on the current observation
             data = resp.json()
             return self._validate_decision(self._parse_json(data.get("response", "").strip()))
         except httpx.ReadTimeout:
-            if "3b" not in self.model_name:
+            if self.model_name not in {"phi3:mini"}:
                 print("[BRAIN] Timeout -> falling back to qwen2.5:3b...")
-                self.model_name = "qwen2.5:3b"
+                self.model_name = "phi3:mini"
                 payload["model"] = self.model_name
                 resp = self.client.post(f"{config.ollama_base_url}/api/generate", json=payload)
                 resp.raise_for_status()
@@ -210,7 +220,8 @@ Choose ONLY the next single action. Base the decision on the current observation
 
     def _validate_decision(self, decision: Dict[str, Any]) -> Dict[str, Any]:
         allowed = {"open_url","launch_app","click_text","click","double_click","right_click","drag",
-                   "type","press_key","hotkey","scroll","wait","shell","done","fail"}
+                   "type","press_key","hotkey","scroll","wait","shell","list_files","read_file","write_file","append_file",
+                   "make_directory","copy_file","move_file","run_command","test_python","done","fail"}
         action = decision.get("action")
         if action not in allowed:
             raise ValueError(f"Brain returned unsupported action: {action!r}")
