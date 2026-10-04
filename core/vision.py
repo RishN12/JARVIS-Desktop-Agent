@@ -15,15 +15,30 @@ class ScreenVision:
         self.client = httpx.Client(timeout=60.0)
 
     def describe(self, image: Image.Image) -> str:
+        # Keep vision input within a predictable size. OCR separately receives
+        # the original screenshot for accurate text coordinates.
+        prepared = image.convert("RGB")
+        prepared.thumbnail(
+            (config.screenshot_max_width, config.screenshot_max_height),
+            Image.Resampling.LANCZOS,
+        )
         buf = io.BytesIO()
-        image.convert("RGB").save(buf, format="JPEG", quality=config.screenshot_quality, optimize=True)
+        prepared.save(
+            buf,
+            format="JPEG",
+            quality=config.screenshot_quality,
+            optimize=True,
+        )
         encoded = base64.b64encode(buf.getvalue()).decode("utf-8")
 
         prompt = """Describe this Windows desktop screenshot for a computer-use agent.
 Identify the active app/window, important buttons, menus, text, forms, icons, dialogs, and anything that looks clickable.
-Give approximate pixel coordinates for important targets using the screenshot's original coordinate system.
+Do not output bounding boxes, coordinate arrays, or raw coordinate lists.
+Focus on semantic visual information: active app/window, visible controls, layout,
+dialogs, icons, forms, and what appears clickable.
 Do not invent UI elements that are not visible.
-Be concise and factual. If the screen is a browser, identify the site and useful page controls."""
+Be concise and factual. If the screen is a browser, identify the site and useful page controls.
+Text coordinates are supplied separately by OCR, so do not guess coordinates."""
 
         payload = {
             "model": self.model_name,
