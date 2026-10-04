@@ -245,8 +245,24 @@ class DesktopAgent:
                 self.history.append(step_record)
                 self._emit_step(step_count, decision, result, screenshot)
 
-                # Delay before next step to allow UI changes to stabilize
-                time.sleep(config.step_delay_seconds)
+                # Observe again after each action so the next planning step can
+                # verify what actually changed instead of trusting the action result.
+                if action != "wait":
+                    time.sleep(config.step_delay_seconds)
+                    post_screenshot = self.screen_manager.capture_screen()
+                    post_elements = self.ocr.read_screen_sync(post_screenshot)
+                    post_description = self.vision.describe(post_screenshot)
+                    step_record["post_action_observation"] = {
+                        "ocr_count": len(post_elements),
+                        "vision": post_description[:1500],
+                        "windows": self.brain.get_open_windows(),
+                    }
+                    self._log(
+                        f"Post-action observation: {len(post_elements)} OCR elements; "
+                        f"Vision: {post_description[:300]}"
+                    )
+                else:
+                    time.sleep(config.step_delay_seconds)
 
             except InterruptedError:
                 self._set_state(AgentState.STOPPED)
