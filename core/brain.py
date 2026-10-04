@@ -1,6 +1,5 @@
 import json
 import re
-import time
 from typing import Dict, Any, List, Optional
 import httpx
 
@@ -15,58 +14,54 @@ except ImportError:
     HAS_WIN32 = False
 
 
-SYSTEM_PROMPT = """You are an Autonomous Windows Desktop Agent. Your ONLY job is to accomplish the user's goal by deciding the NEXT single action.
+SYSTEM_PROMPT = """You are the planning brain of a Windows Desktop Agent.
 
-CRITICAL RULES:
-1. NEVER repeat an action that already succeeded. If a step says "Typed text", "Launched", "Clicked" etc. in history - that step is DONE. Do NOT do it again.
-2. Once ALL parts of the goal are complete, you MUST output action "done". Do NOT continue acting after a goal is satisfied.
-3. Think carefully about what has already happened from the history. Only decide on the very NEXT thing that hasn't been done yet.
-4. If you just launched an app and it shows in "Open Windows", it is open. Proceed to interact with it.
-5. If typing text was already completed (shown in history), do NOT type again. Call "done" if the overall goal is met.
+Your job is NOT to chat. Your job is to choose the SINGLE BEST NEXT ACTION needed to accomplish the user's goal.
 
-Always output ONLY strictly valid JSON with this structure - no markdown, no extra text:
+You receive:
+- the user's high-level goal
+- actions already attempted and their results
+- currently open Windows
+- text currently visible on the screen, including approximate coordinates
+
+IMPORTANT:
+1. Treat the screen observation as the current truth. Do not assume an action succeeded just because it was attempted.
+2. NEVER repeat an action that succeeded unless the screen evidence shows it needs to be repeated.
+3. If an action failed, adapt. Do not blindly repeat it.
+4. Use click_text when visible text identifies the target. It is safer than guessing coordinates.
+5. Use exact click coordinates only when the screen observation gives a useful coordinate or when there is no text target.
+6. After opening an app or URL, normally wait briefly, then inspect the new screen before acting.
+7. Break complex goals into small steps. Do not try to perform multiple actions in one response.
+8. When the goal is genuinely complete, output "done".
+9. If the goal cannot be completed with the available actions, output "fail" and explain why.
+10. Never claim that something happened unless the observation/history supports it.
+
+Always output ONLY valid JSON:
 {
-  "thought": "<what has been done so far and what specifically needs to happen next>",
-  "action": "<action_name>",
-  "params": { ... }
+  "thought": "brief explanation of what the screen/history shows and why the next action is needed",
+  "action": "action_name",
+  "params": {}
 }
 
 AVAILABLE ACTIONS:
-1. open_url
-   params: {"url": "https://example.com"}
-2. launch_app - Use Win+R to open any app by name
-   params: {"app": "notepad"} or {"app": "chrome"} or {"app": "calc"} or {"app": "spotify"}
-3. click_text - Uses OCR to find and click any visible text/button/link on screen. PREFER this over blind coordinates.
-   params: {"text": "Sign In"} or {"text": "Compose"} or {"text": "OK"}
-4. click - Click at exact coordinates
-   params: {"x": 500, "y": 300, "button": "left"}
-5. double_click
-   params: {"x": 500, "y": 300}
-6. right_click
-   params: {"x": 500, "y": 300}
-7. type - Types text using clipboard paste. Fast and unicode-safe.
-   params: {"text": "hello world"}
-8. press_key
-   params: {"key": "enter"} or {"key": "tab"} or {"key": "esc"} or {"key": "backspace"}
-9. hotkey
-   params: {"keys": ["ctrl", "s"]} or {"keys": ["ctrl", "a"]} or {"keys": ["alt", "tab"]}
-10. scroll
-    params: {"amount": -300} (negative=down, positive=up)
-11. wait - Wait for UI to settle
-    params: {"seconds": 1.5}
-12. shell - Run a PowerShell command
-    params: {"command": "Get-Process"}
-13. done - CALL THIS when the goal is fully complete. Required - do not loop forever.
-    params: {"summary": "what was accomplished"}
-14. fail - Call if you are completely stuck and cannot proceed.
-    params: {"reason": "why you cannot proceed"}
+- open_url: {"url":"https://example.com"}
+- launch_app: {"app":"chrome"}
+- click_text: {"text":"Compose"}
+- click: {"x":500,"y":300,"button":"left"}
+- double_click: {"x":500,"y":300}
+- right_click: {"x":500,"y":300}
+- drag: {"start_x":100,"start_y":100,"end_x":500,"end_y":500}
+- type: {"text":"hello"}
+- press_key: {"key":"enter"}
+- hotkey: {"keys":["ctrl","l"]}
+- scroll: {"amount":-500}
+- wait: {"seconds":2}
+- shell: {"command":"Get-Process"}
+- done: {"summary":"what was completed"}
+- fail: {"reason":"why it cannot be completed"}
 
-DECISION GUIDELINES:
-- Step 1 of any task: open the app or URL needed.
-- Step 2 after launching: wait 1-2 seconds for it to load.
-- Step 3+: interact (click, type, press keys etc).
-- Final step: once everything in the goal is done, call "done".
-- Typing already done? Don't retype. App already open? Don't relaunch.
+For computer-use tasks, prefer this pattern:
+OPEN/LAUNCH -> WAIT -> OBSERVE -> INTERACT -> OBSERVE -> VERIFY -> DONE.
 """
 
 
@@ -76,7 +71,6 @@ class AgentBrain:
         self.client = httpx.Client(timeout=50.0)
 
     def get_open_windows(self) -> List[str]:
-        """Returns titles of visible top-level windows on the active desktop."""
         windows = []
         if HAS_WIN32:
             try:
@@ -96,68 +90,90 @@ class AgentBrain:
                 win32gui.EnumWindows(_enum_cb, None)
             except Exception:
                 pass
-        return windows[:12]
+        return windows[:20]
 
     def _build_history_summary(self, history: List[Dict[str, Any]]) -> str:
-        """Builds a clean, readable summary of completed actions."""
         if not history:
-            return "No actions taken yet — this is Step 1."
+            return "No actions attempted yet."
+
         lines = []
-        for h in history[-10:]:
+        for h in history[-12:]:
             action = h.get("action", "?")
             params = h.get("params", {})
-            result = h.get("result", "")
-            # Create a concise one-liner
-            if action == "launch_app":
-                lines.append(f"[DONE] Launched app: {params.get('app', '?')} → {result}")
-            elif action == "open_url":
-                lines.append(f"[DONE] Opened URL: {params.get('url', '?')}")
-            elif action == "type":
-                text_preview = str(params.get("text", ""))[:40]
-                lines.append(f"[DONE] Typed text: '{text_preview}' → {result}")
-            elif action == "click_text":
-                lines.append(f"[DONE] Clicked text on screen: '{params.get('text', '?')}' → {result}")
-            elif action == "click":
-                lines.append(f"[DONE] Clicked at ({params.get('x')}, {params.get('y')}) → {result}")
-            elif action == "wait":
-                lines.append(f"[DONE] Waited {params.get('seconds', '?')}s")
-            elif action == "press_key":
-                lines.append(f"[DONE] Pressed key: {params.get('key', '?')}")
-            elif action == "hotkey":
-                lines.append(f"[DONE] Hotkey: {params.get('keys', '?')}")
-            elif action == "scroll":
-                lines.append(f"[DONE] Scrolled: {params.get('amount', '?')}")
-            elif action == "error":
-                lines.append(f"[ERROR] Step failed: {result}")
+            result = str(h.get("result", ""))
+            thought = str(h.get("thought", ""))[:120]
+
+            if action == "type":
+                p = str(params.get("text", ""))
+                if len(p) > 80:
+                    p = p[:80] + "..."
+                lines.append(f"[{h.get('step','?')}] type -> '{p}' | result: {result}")
             else:
-                lines.append(f"[DONE] {action}: {params} → {result}")
+                lines.append(
+                    f"[{h.get('step','?')}] {action} {json.dumps(params, ensure_ascii=False)} | result: {result}"
+                )
+            if thought:
+                lines.append(f"    previous thought: {thought}")
+
         return "\n".join(lines)
+
+    def _build_screen_observation(
+        self,
+        screen_elements: Optional[List[Dict[str, Any]]],
+    ) -> str:
+        if not screen_elements:
+            return "No OCR text was detected on the current screen."
+
+        lines = []
+        seen = set()
+
+        for el in screen_elements[:120]:
+            text_value = str(el.get("text", "")).strip()
+            if not text_value:
+                continue
+
+            key = (
+                el.get("type"),
+                text_value.lower(),
+                el.get("center_x"),
+                el.get("center_y"),
+            )
+            if key in seen:
+                continue
+            seen.add(key)
+
+            lines.append(
+                f'- {el.get("type","element")}: "{text_value}" '
+                f'at ({el.get("center_x","?")}, {el.get("center_y","?")})'
+            )
+
+        return "\n".join(lines) if lines else "No useful OCR text was detected."
 
     def decide_next_action(
         self,
         goal: str,
         history: List[Dict[str, Any]],
         screen_summary: str = "",
+        screen_elements: Optional[List[Dict[str, Any]]] = None,
     ) -> Dict[str, Any]:
-        """Queries Ollama to decide the next step."""
         open_windows = self.get_open_windows()
         history_text = self._build_history_summary(history)
+        observation = screen_summary or self._build_screen_observation(screen_elements)
 
-        user_prompt = f"""USER GOAL: "{goal}"
+        user_prompt = f"""USER GOAL:
+{goal}
 
-ALREADY COMPLETED STEPS ({len(history)} total):
+ACTION HISTORY:
 {history_text}
 
-CURRENTLY OPEN WINDOWS ON SCREEN:
-{json.dumps(open_windows) if open_windows else "Only desktop/taskbar visible."}
+OPEN WINDOWS:
+{json.dumps(open_windows, ensure_ascii=False)}
 
-INSTRUCTIONS:
-- Review the completed steps above carefully.
-- Only choose an action that has NOT been done yet.
-- If all parts of the goal are already done, output action "done".
-- Output ONLY a single JSON object.
+CURRENT SCREEN OBSERVATION:
+{observation}
 
-What is the NEXT action to take?"""
+Choose ONLY the next single action. Base the decision on the current observation and history.
+"""
 
         payload = {
             "model": self.model_name,
@@ -166,30 +182,56 @@ What is the NEXT action to take?"""
             "stream": False,
             "format": "json",
             "options": {
-                "temperature": 0.1,  # Low temp = more deterministic, less hallucination
+                "temperature": 0.1,
                 "top_p": 0.85,
                 "repeat_penalty": 1.1,
             },
         }
 
         try:
-            resp = self.client.post(f"{config.ollama_base_url}/api/generate", json=payload)
+            resp = self.client.post(
+                f"{config.ollama_base_url}/api/generate",
+                json=payload,
+            )
             resp.raise_for_status()
             data = resp.json()
             raw_text = data.get("response", "").strip()
-            return self._parse_json(raw_text)
+            decision = self._parse_json(raw_text)
+            return self._validate_decision(decision)
         except httpx.ReadTimeout:
             if "3b" not in self.model_name:
-                print("[BRAIN] Timeout → falling back to qwen2.5:3b...")
+                print("[BRAIN] Timeout -> falling back to qwen2.5:3b...")
                 self.model_name = "qwen2.5:3b"
-                payload["model"] = "qwen2.5:3b"
-                resp = self.client.post(f"{config.ollama_base_url}/api/generate", json=payload)
+                payload["model"] = self.model_name
+                resp = self.client.post(
+                    f"{config.ollama_base_url}/api/generate",
+                    json=payload,
+                )
+                resp.raise_for_status()
                 data = resp.json()
-                return self._parse_json(data.get("response", "").strip())
+                return self._validate_decision(
+                    self._parse_json(data.get("response", "").strip())
+                )
             raise
 
+    def _validate_decision(self, decision: Dict[str, Any]) -> Dict[str, Any]:
+        allowed = {
+            "open_url", "launch_app", "click_text", "click", "double_click",
+            "right_click", "drag", "type", "press_key", "hotkey", "scroll",
+            "wait", "shell", "done", "fail"
+        }
+
+        action = decision.get("action")
+        if action not in allowed:
+            raise ValueError(f"Brain returned unsupported action: {action!r}")
+
+        if not isinstance(decision.get("params", {}), dict):
+            raise ValueError("Brain returned non-object params.")
+
+        decision.setdefault("thought", "")
+        return decision
+
     def _parse_json(self, raw_text: str) -> Dict[str, Any]:
-        """Extracts and parses JSON object from model response."""
         try:
             return json.loads(raw_text)
         except json.JSONDecodeError:
@@ -199,4 +241,6 @@ What is the NEXT action to take?"""
                     return json.loads(match.group(1))
                 except Exception:
                     pass
-            raise ValueError(f"Model did not return valid JSON: {raw_text[:300]}")
+            raise ValueError(
+                f"Model did not return valid JSON: {raw_text[:300]}"
+            )
