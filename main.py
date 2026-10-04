@@ -96,7 +96,9 @@ def run_diagnostics():
 def main():
     parser = argparse.ArgumentParser(description="Autonomous Windows Desktop Agent")
     parser.add_argument("--test", action="store_true", help="Run system diagnostics and verify components")
-    parser.add_argument("--cli", action="store_true", help="Run in headless command-line mode without GUI")
+    parser.add_argument("--cli", action="store_true", help="Run one goal directly without GUI")
+    parser.add_argument("--server", action="store_true", help="Run the JARVIS bridge headlessly")
+    parser.add_argument("--gui", action="store_true", help="Launch the optional legacy GUI")
     parser.add_argument("--goal", type=str, help="Goal to execute in CLI mode")
     parser.add_argument("--model", type=str, default="qwen2.5:3b", help="Ollama model to use")
 
@@ -122,7 +124,23 @@ def main():
             agent.stop()
         return
 
-    # Default: launch CustomTkinter GUI
+    if args.server or not args.gui:
+        from core.agent import DesktopAgent
+        from core.config import config
+        from jarvis_bridge import JarvisDesktopBridge
+        agent = DesktopAgent()
+        bridge = JarvisDesktopBridge(agent)
+        bridge.start_background(config.jarvis_bridge_host, config.jarvis_bridge_port)
+        print("[JARVIS MODE] Desktop Agent running headlessly.")
+        print(f"[JARVIS MODE] Bridge: http://{config.jarvis_bridge_host}:{config.jarvis_bridge_port}")
+        print("[JARVIS MODE] Waiting for tasks from JARVIS...")
+        try:
+            while True:
+                time.sleep(1)
+        except KeyboardInterrupt:
+            agent.stop()
+        return
+
     from gui.app import run_gui
     run_gui()
 

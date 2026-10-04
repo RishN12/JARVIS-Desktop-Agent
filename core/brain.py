@@ -29,9 +29,11 @@ Rules:
 5. Use coordinates only when useful coordinates are provided by OCR/observation.
 6. After launching/opening something, verify it before repeating the action.
 7. Break complex goals into one action at a time.
-8. For Windows apps use launch_app, not a web URL.
-9. Only say done when the goal is actually supported by evidence.
-10. If the tools cannot complete the goal, say fail.
+8. For coding tasks, prefer developer actions (list_files, read_file, write_file, run_command, test_python) over GUI typing.
+9. If a command fails, inspect its output, modify the relevant file, and test again.
+10. For Windows apps use launch_app, not a web URL.
+11. Only say done when the goal is actually supported by evidence.
+12. If the tools cannot complete the goal, say fail.
 
 Common app mappings:
 Calculator -> calc
