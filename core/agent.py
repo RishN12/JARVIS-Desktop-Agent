@@ -11,6 +11,7 @@ from .failsafe import FailsafeController
 from .actions import ActionExecutor
 from .brain import AgentBrain
 from .ocr import WindowsOCR
+from .vision import ScreenVision
 from routines.seneca import SenecaRoutine
 
 
@@ -39,6 +40,7 @@ class DesktopAgent:
         self.actions = ActionExecutor(self.failsafe)
         self.brain = AgentBrain()
         self.ocr = WindowsOCR()
+        self.vision = ScreenVision()
 
         self.current_state = AgentState.IDLE
         self.current_goal = ""
