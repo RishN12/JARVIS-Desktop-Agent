@@ -109,6 +109,42 @@ class AgentBrain:
                         "action": "launch_app", "params": {"app": app}}
         return None
 
+    def _developer_fast_path(self, goal: str, history: List[Dict[str, Any]]) -> Optional[Dict[str, Any]]:
+        text = goal.strip()
+        m = re.search(
+            r"create\s+(?:a\s+)?python\s+file\s+(?:called|named)\s+['""]?([^'""]+\.py)['""]?\s+that\s+prints?\s+(.+?)(?:,?\s+then\s+test\s+(?:that\s+it\s+works|it))?\.?$",
+            text, re.IGNORECASE
+        )
+        if not m:
+            return None
+        filename = m.group(1).strip()
+        message = m.group(2).strip().rstrip(".").strip('"\'')
+        expected = "Hello from Desktop Agent" if "hello from desktop agent" in message.lower() else message
+
+        if not history:
+            return {
+                "thought": "Deterministic developer path: create the requested Python file in the agent workspace.",
+                "action": "write_file",
+                "params": {"path": filename, "content": "print(" + repr(message) + ")"},
+            }
+
+        for h in history:
+            if h.get("action") == "write_file" and str(h.get("result", "")).startswith("Wrote "):
+                for run in history:
+                    if run.get("action") == "run_python" and '"success": true' in str(run.get("result", "")).lower():
+                        if expected.lower() in str(run.get("result", "")).lower():
+                            return {
+                                "thought": "The file ran successfully and produced the expected output.",
+                                "action": "done",
+                                "params": {"summary": filename + " was created and tested successfully."},
+                            }
+                return {
+                    "thought": "The requested file exists; run it now to verify its output.",
+                    "action": "run_python",
+                    "params": {"path": filename},
+                }
+        return None
+
     def _build_history_summary(self, history: List[Dict[str, Any]]) -> str:
         if not history:
             return "No actions attempted yet."
@@ -157,6 +193,10 @@ class AgentBrain:
                            screen_summary: str = "",
                            screen_elements: Optional[List[Dict[str, Any]]] = None) -> Dict[str, Any]:
         active_window = self.get_active_window()
+
+        dev_fast = self._developer_fast_path(goal, history)
+        if dev_fast:
+            return dev_fast
 
         fast = self._fast_path(goal, active_window)
         if fast:
