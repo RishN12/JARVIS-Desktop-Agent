@@ -79,6 +79,15 @@ class AgentBrain:
         self.model_name = model_name or config.default_planner_model
         self.client = httpx.Client(timeout=50.0)
 
+    def get_active_window(self) -> str:
+        if not HAS_WIN32:
+            return ""
+        try:
+            hwnd = win32gui.GetForegroundWindow()
+            return win32gui.GetWindowText(hwnd).strip()
+        except Exception:
+            return ""
+
     def get_open_windows(self) -> List[str]:
         windows = []
         if HAS_WIN32:
@@ -93,7 +102,7 @@ class AgentBrain:
                             rect = win32gui.GetWindowRect(hwnd)
                             w = rect[2] - rect[0]
                             h = rect[3] - rect[1]
-                            if w > 50 and h > 50:
+                            if w > 50 and h > 50 and title != "Program Manager":
                                 windows.append(title)
 
                 win32gui.EnumWindows(_enum_cb, None)
@@ -172,6 +181,7 @@ class AgentBrain:
         screen_elements: Optional[List[Dict[str, Any]]] = None,
     ) -> Dict[str, Any]:
         open_windows = self.get_open_windows()
+        active_window = self.get_active_window()
         history_text = self._build_history_summary(history)
         observation = screen_summary or self._build_screen_observation(screen_elements)
 
@@ -180,6 +190,9 @@ class AgentBrain:
 
 ACTION HISTORY:
 {history_text}
+
+ACTIVE WINDOW:
+{active_window or "Unknown"}
 
 OPEN WINDOWS:
 {json.dumps(open_windows, ensure_ascii=False)}
