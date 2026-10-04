@@ -9,14 +9,11 @@ from .config import config
 
 
 class ScreenVision:
-    """Uses a local Ollama vision model to describe the current desktop.
-
-    Vision is deliberately semantic: OCR owns exact text and coordinates.
-    """
+    """Optional semantic screen vision using a local Ollama vision model."""
 
     def __init__(self, model_name: Optional[str] = None):
         self.model_name = model_name or config.vision_model
-        self.client = httpx.Client(timeout=60.0)
+        self.client = httpx.Client(timeout=45.0)
 
     def _prepare_image(self, image: Image.Image) -> str:
         prepared = image.convert("RGB")
@@ -25,51 +22,40 @@ class ScreenVision:
             Image.Resampling.LANCZOS,
         )
         buf = io.BytesIO()
-        prepared.save(
-            buf,
-            format="JPEG",
-            quality=config.screenshot_quality,
-            optimize=True,
-        )
+        prepared.save(buf, format="JPEG", quality=config.screenshot_quality, optimize=True)
         return base64.b64encode(buf.getvalue()).decode("utf-8")
 
     @staticmethod
     def _clean_description(content: str) -> str:
-        """Reject coordinate/bounding-box style output from the vision model."""
         text = (content or "").strip()
-
-        # Moondream can sometimes answer an otherwise semantic prompt with a
-        # point/box such as [0.0, 0.61, 0.99, 0.83]. That is not useful here.
-        if re.fullmatch(
-            r"[[(]?s*-?d+(?:.d+)?(?:s*,s*-?d+(?:.d+)?){1,5}s*[])]?",
-            text,
-        ):
+        coordinate_pattern = (
+            r"(?:\[\s*|\(\s*)?"
+            r"-?\d+(?:\.\d+)?"
+            r"(?:\s*,\s*-?\d+(?:\.\d+)?){1,5}"
+            r"(?:\s*\]|\s*\))?"
+        )
+        if re.fullmatch(coordinate_pattern, text):
             return ""
-
         return text
 
     def describe(self, image: Image.Image) -> str:
-        encoded = self._prepare_image(image)
+        if not config.vision_enabled:
+            return "Vision disabled: using OCR and Windows window information."
 
-        # /api/generate is intentionally used here instead of /api/chat.
-        # It is the simpler Ollama image-prompt path for the local Moondream
-        # model and avoids the model treating the request as a point/box query.
-        prompt = """Look at this screenshot of a Windows computer and describe what is visibly happening.
-Give a short natural-language description for another AI that needs to operate the computer.
-Mention the active application/window, important visible controls, dialogs, pages, and obvious UI state.
-If an application is open, name it.
-If a browser is open, name the site/page when visible.
-Do NOT return coordinates, bounding boxes, numbers-only answers, JSON, or coordinate arrays.
-Do NOT guess. Only describe things that are actually visible."""
+        encoded = self._prepare_image(image)
+        prompt = """Describe this Windows desktop screenshot for a computer-use agent.
+Identify the active app/window and important visible UI elements, dialogs, buttons,
+menus, pages, and obvious state changes. Use short natural language.
+Do not return coordinates, bounding boxes, JSON, coordinate arrays, or numbers-only output.
+Do not guess. Only describe what is visibly supported by the screenshot."""
 
         payload = {
             "model": self.model_name,
             "prompt": prompt,
             "images": [encoded],
             "stream": False,
-            "options": {
-                "temperature": 0.0,
-            },
+            "keep_alive": "10m",
+            "options": {"temperature": 0.0},
         }
 
         try:
@@ -80,8 +66,6 @@ Do NOT guess. Only describe things that are actually visible."""
             response.raise_for_status()
             data = response.json()
             content = self._clean_description(data.get("response", ""))
-            if content:
-                return content
-            return "Vision returned no usable semantic description."
+            return content or "Vision returned no usable semantic description."
         except Exception as exc:
             return f"Vision unavailable: {exc}"
