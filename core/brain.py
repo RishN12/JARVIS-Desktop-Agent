@@ -291,6 +291,20 @@ Choose ONLY the next single action. Base the decision on the current observation
             raise ValueError(f"Brain returned unsupported action: {action!r}")
         if not isinstance(decision.get("params", {}), dict):
             raise ValueError("Brain returned non-object params.")
+
+        params = decision["params"]
+        file_actions = {"read_file", "write_file", "append_file", "test_python", "run_python"}
+        if action in file_actions and not params.get("path"):
+            for alias in ("file_path", "filename", "file", "name"):
+                if params.get(alias):
+                    params["path"] = params[alias]
+                    break
+        if action in {"write_file", "append_file"} and not params.get("content"):
+            for alias in ("text", "body", "contents", "code"):
+                if params.get(alias) is not None:
+                    params["content"] = params[alias]
+                    break
+
         decision.setdefault("thought", "")
         return decision
 
@@ -298,10 +312,12 @@ Choose ONLY the next single action. Base the decision on the current observation
         try:
             return json.loads(raw_text)
         except json.JSONDecodeError:
-            match = re.search(r"(\{.*\})", raw_text, re.DOTALL)
-            if match:
+            decoder = json.JSONDecoder()
+            for match in re.finditer(r"\{", raw_text):
                 try:
-                    return json.loads(match.group(1))
-                except Exception:
-                    pass
+                    value, _ = decoder.raw_decode(raw_text[match.start():])
+                    if isinstance(value, dict):
+                        return value
+                except json.JSONDecodeError:
+                    continue
             raise ValueError(f"Model did not return valid JSON: {raw_text[:300]}")
