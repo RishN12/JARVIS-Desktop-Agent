@@ -30,10 +30,12 @@ Rules:
 6. After launching/opening something, verify it before repeating the action.
 7. Break complex goals into one action at a time.
 8. For coding tasks, prefer developer actions (list_files, read_file, write_file, run_command, test_python) over GUI typing.
-9. If a command fails, inspect its output, modify the relevant file, and test again.
-10. For Windows apps use launch_app, not a web URL.
-11. Only say done when the goal is actually supported by evidence.
-12. If the tools cannot complete the goal, say fail.
+9. Use the exact action name write_file for writing files, not write_to_file.
+10. If list_files already showed the needed directory, move to the next required action instead of listing it again.
+11. If a command fails, inspect its output, modify the relevant file, and test again.
+12. For Windows apps use launch_app, not a web URL.
+13. Only say done when the goal is actually supported by evidence.
+14. If the tools cannot complete the goal, say fail.
 
 Common app mappings:
 Calculator -> calc
@@ -221,7 +223,7 @@ Choose ONLY the next single action. Base the decision on the current observation
     def _validate_decision(self, decision: Dict[str, Any]) -> Dict[str, Any]:
         allowed = {"open_url","launch_app","click_text","click","double_click","right_click","drag",
                    "type","press_key","hotkey","scroll","wait","shell","list_files","read_file","write_file","append_file",
-                   "make_directory","copy_file","move_file","run_command","test_python","done","fail"}
+                   "make_directory","copy_file","move_file","run_command","test_python","write_to_file","done","fail"}
         action = decision.get("action")
         if action not in allowed:
             raise ValueError(f"Brain returned unsupported action: {action!r}")
