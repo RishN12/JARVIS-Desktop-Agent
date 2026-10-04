@@ -71,6 +71,28 @@ class DeveloperTools:
         except subprocess.TimeoutExpired:
             return json.dumps({"success": False, "timeout": True, "output": f"Command timed out after {timeout}s."})
 
+    def run_python(self, path: str, args: Optional[list] = None, timeout: int = 30) -> str:
+        """Runs a Python file inside the workspace and captures its output."""
+        p = self._path(path)
+        if not p.is_file():
+            return f"Python file does not exist: {path}"
+        cmd = ["python", str(p)] + [str(a) for a in (args or [])]
+        try:
+            result = subprocess.run(
+                cmd, cwd=str(self.workspace), capture_output=True, text=True,
+                timeout=max(1, min(timeout, 120))
+            )
+            output = (result.stdout or "").strip()
+            if result.stderr:
+                output += ("\n" if output else "") + result.stderr.strip()
+            return json.dumps({
+                "return_code": result.returncode,
+                "success": result.returncode == 0,
+                "output": (output or "(no output)")[-12000:]
+            }, ensure_ascii=False)
+        except subprocess.TimeoutExpired:
+            return json.dumps({"success": False, "timeout": True, "output": f"Python program timed out after {timeout}s."})
+
     def test_python(self, path: str) -> str:
         p = self._path(path)
         if not p.is_file(): return f"Python file does not exist: {path}"
