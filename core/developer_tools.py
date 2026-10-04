@@ -12,8 +12,23 @@ class DeveloperTools:
         self.workspace = Path(workspace or os.getcwd()).resolve()
 
     def _path(self, path: str) -> Path:
-        p = Path(path)
-        if not p.is_absolute():
+        raw = str(path or "").strip()
+        if not raw:
+            raise ValueError("A non-empty path is required.")
+        p = Path(raw)
+        if p.is_absolute():
+            # Models sometimes hallucinate a Windows username. If the absolute
+            # path points outside the workspace but its final path is simple,
+            # safely anchor it in the workspace instead of touching other folders.
+            try:
+                p = p.resolve()
+                p.relative_to(self.workspace)
+            except ValueError:
+                if len(p.parts) <= 5:
+                    p = self.workspace / p.name
+                else:
+                    raise ValueError(f"Path is outside workspace: {path}")
+        else:
             p = self.workspace / p
         p = p.resolve()
         try:
@@ -36,8 +51,13 @@ class DeveloperTools:
         return text if len(text) <= max_chars else text[:max_chars] + "\n...[truncated]"
 
     def write_file(self, path: str, content: str) -> str:
-        p = self._path(path); p.parent.mkdir(parents=True, exist_ok=True)
-        p.write_text(content, encoding="utf-8")
+        if content is None:
+            raise ValueError("write_file requires content.")
+        p = self._path(path)
+        if p.exists() and p.is_dir():
+            raise ValueError(f"Cannot write a file over directory: {path}")
+        p.parent.mkdir(parents=True, exist_ok=True)
+        p.write_text(str(content), encoding="utf-8")
         return f"Wrote {len(content)} characters to {p}"
 
     def append_file(self, path: str, content: str) -> str:
