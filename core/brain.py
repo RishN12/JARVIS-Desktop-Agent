@@ -112,7 +112,7 @@ class AgentBrain:
     def _developer_fast_path(self, goal: str, history: List[Dict[str, Any]]) -> Optional[Dict[str, Any]]:
         text = goal.strip()
         m = re.search(
-            r"create\s+(?:a\s+)?python\s+file\s+(?:called|named)\s+['""]?([^'""]+\.py)['""]?\s+that\s+prints?\s+(.+?)(?:,?\s+then\s+test\s+(?:that\s+it\s+works|it))?\.?$",
+            r"""create\s+(?:a\s+)?python\s+file\s+(?:called|named)\s+['""]?([^'""]+\.py)['""]?\s+that\s+prints?\s+(.+?)(?:,?\s+then\s+test\s+(?:that\s+it\s+works|it))?\.?$""",
             text, re.IGNORECASE
         )
         if not m:
