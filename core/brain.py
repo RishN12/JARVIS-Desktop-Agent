@@ -31,12 +31,14 @@ Rules:
 6. After launching/opening something, verify it before repeating the action.
 7. Break complex goals into one action at a time.
 8. For coding tasks, prefer developer actions (list_files, read_file, write_file, run_command, test_python, run_python) over GUI typing.
-9. Use the exact action name write_file for writing files, not write_to_file.
-10. If list_files already showed the needed directory, move to the next required action instead of listing it again.
-11. If a command fails, inspect its output, modify the relevant file, and test again.
-12. For Windows apps use launch_app, not a web URL.
-13. Only say done when the goal is actually supported by evidence.
-14. If the tools cannot complete the goal, say fail.
+9. For running a Python file, prefer run_python with a relative path such as calculator.py. Never put an unquoted absolute Windows path containing spaces inside a shell command.
+10. Developer file paths must stay inside the provided WORKSPACE and should normally be relative.
+11. Use the exact action name write_file for writing files, not write_to_file.
+12. If list_files already showed the needed directory, move to the next required action instead of listing it again.
+13. If a command fails, inspect its output, modify the relevant file, and test again.
+14. For Windows apps use launch_app, not a web URL.
+15. Only say done when the goal is actually supported by evidence.
+16. If the tools cannot complete the goal, say fail.
 
 Common app mappings:
 Calculator -> calc
