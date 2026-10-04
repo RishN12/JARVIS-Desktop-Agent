@@ -341,6 +341,24 @@ class DesktopAgent:
         elif action == "shell":
             cmd = str(params.get("command", ""))
             return self.actions.run_shell(cmd)
+        elif action == "list_files":
+            return self.developer.list_files(str(params.get("path", ".")))
+        elif action == "read_file":
+            return self.developer.read_file(str(params.get("path", "")), int(params.get("max_chars", 30000)))
+        elif action == "write_file":
+            return self.developer.write_file(str(params.get("path", "")), str(params.get("content", "")))
+        elif action == "append_file":
+            return self.developer.append_file(str(params.get("path", "")), str(params.get("content", "")))
+        elif action == "make_directory":
+            return self.developer.make_directory(str(params.get("path", "")))
+        elif action == "copy_file":
+            return self.developer.copy_file(str(params.get("source", "")), str(params.get("destination", "")))
+        elif action == "move_file":
+            return self.developer.move_file(str(params.get("source", "")), str(params.get("destination", "")))
+        elif action == "run_command":
+            return self.developer.run_command(str(params.get("command", "")), int(params.get("timeout", 30)))
+        elif action == "test_python":
+            return self.developer.test_python(str(params.get("path", "")))
         else:
             raise ValueError(f"Unrecognized action '{action}'.")
 
