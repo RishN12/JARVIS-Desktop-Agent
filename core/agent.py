@@ -300,14 +300,24 @@ class DesktopAgent:
                 return
             except Exception as e:
                 self._log(f"[ERROR] Step {step_count} encountered error: {e}")
+                error_text = str(e)
                 self.history.append({
                     "step": step_count,
                     "action": "error",
                     "params": {},
-                    "result": str(e),
+                    "result": error_text,
                     "timestamp": time.time(),
                 })
-                time.sleep(1.0)
+                if error_text == last_error:
+                    repeated_error_count += 1
+                else:
+                    repeated_error_count = 1
+                last_error = error_text
+                if repeated_error_count >= 3:
+                    self._log("[GUARD] The same execution error repeated three times. Stopping instead of looping.")
+                    self._set_state(AgentState.FAILED)
+                    return
+                time.sleep(0.5)
 
         if step_count >= config.max_steps_per_task:
             self._log("[WARNING] Reached maximum allowed steps without completion.")
