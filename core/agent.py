@@ -345,7 +345,7 @@ class DesktopAgent:
             return self.developer.list_files(str(params.get("path", ".")))
         elif action == "read_file":
             return self.developer.read_file(str(params.get("path", "")), int(params.get("max_chars", 30000)))
-        elif action == "write_file":
+        elif action in {"write_file", "write_to_file"}:
             return self.developer.write_file(str(params.get("path", "")), str(params.get("content", "")))
         elif action == "append_file":
             return self.developer.append_file(str(params.get("path", "")), str(params.get("content", "")))
