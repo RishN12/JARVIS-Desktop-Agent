@@ -147,6 +147,8 @@ class DesktopAgent:
         step_count = 0
         consecutive_repeats = 0
         last_action_key = None
+        repeated_error_count = 0
+        last_error = ""
 
         while step_count < config.max_steps_per_task:
             # Check for stop or pause
@@ -235,6 +237,32 @@ class DesktopAgent:
                 # 5. Execute the chosen action
                 result = self._dispatch_action(action, params)
                 self._log(f"Result: {result}")
+
+                # Tool-level failures are returned as strings. Do not let a weak
+                # planner loop forever on the exact same failed operation.
+                result_lower = str(result).lower()
+                failure_markers = ("error", "failed", "does not exist", "could not", "permission denied", "timed out", "no command")
+                tool_failed = any(marker in result_lower for marker in failure_markers) and '"success": true' not in result_lower
+                error_key = f"{action}::{result}"
+                if tool_failed:
+                    if error_key == last_error:
+                        repeated_error_count += 1
+                    else:
+                        repeated_error_count = 1
+                    last_error = error_key
+                    if repeated_error_count >= 3:
+                        self._log("[GUARD] The same tool failure repeated three times. Stopping instead of looping.")
+                        self._set_state(AgentState.FAILED)
+                        self._emit_step(
+                            step_count,
+                            {"action": "fail", "params": {"reason": str(result)}},
+                            str(result),
+                            screenshot,
+                        )
+                        return
+                else:
+                    repeated_error_count = 0
+                    last_error = ""
 
                 # 6. Record step in history
                 step_record = {
@@ -344,9 +372,18 @@ class DesktopAgent:
         elif action == "list_files":
             return self.developer.list_files(str(params.get("path", ".")))
         elif action == "read_file":
-            return self.developer.read_file(str(params.get("path", "")), int(params.get("max_chars", 30000)))
+            path = params.get("path") or params.get("file_path") or params.get("filename") or params.get("file") or params.get("name")
+            if not path:
+                raise ValueError("read_file requires a file path.")
+            return self.developer.read_file(str(path), int(params.get("max_chars", 30000)))
         elif action in {"write_file", "write_to_file"}:
-            return self.developer.write_file(str(params.get("path", "")), str(params.get("content", "")))
+            path = params.get("path") or params.get("file_path") or params.get("filename") or params.get("file") or params.get("name")
+            content = params.get("content")
+            if content is None:
+                content = params.get("text", params.get("body", params.get("contents", params.get("code", ""))))
+            if not path:
+                raise ValueError("write_file requires a file path.")
+            return self.developer.write_file(str(path), str(content))
         elif action == "append_file":
             return self.developer.append_file(str(params.get("path", "")), str(params.get("content", "")))
         elif action == "make_directory":
@@ -358,13 +395,19 @@ class DesktopAgent:
         elif action == "run_command":
             return self.developer.run_command(str(params.get("command", "")), int(params.get("timeout", 30)))
         elif action == "test_python":
-            return self.developer.test_python(str(params.get("path", "")))
+            path = params.get("path") or params.get("file_path") or params.get("filename") or params.get("file") or params.get("name")
+            if not path:
+                raise ValueError("test_python requires a file path.")
+            return self.developer.test_python(str(path))
         elif action == "run_python":
+            path = params.get("path") or params.get("file_path") or params.get("filename") or params.get("file") or params.get("name")
+            if not path:
+                raise ValueError("run_python requires a file path.")
             args = params.get("args", [])
             if isinstance(args, str):
                 args = [args]
             return self.developer.run_python(
-                str(params.get("path", "")), args,
+                str(path), args,
                 int(params.get("timeout", 30))
             )
         else:
