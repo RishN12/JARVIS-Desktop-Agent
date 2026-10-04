@@ -225,6 +225,18 @@ Choose ONLY the next single action. Base the decision on the current observation
                    "type","press_key","hotkey","scroll","wait","shell","list_files","read_file","write_file","append_file",
                    "make_directory","copy_file","move_file","run_command","test_python","write_to_file","done","fail"}
         action = decision.get("action")
+        aliases = {
+            "write_to_file": "write_file",
+            "create_file": "write_file",
+            "edit_file": "write_file",
+            "execute_command": "run_command",
+            "run_shell": "run_command",
+            "list_directory": "list_files",
+            "read": "read_file",
+            "write": "write_file",
+        }
+        if action in aliases:
+            decision["action"] = action = aliases[action]
         if action not in allowed:
             raise ValueError(f"Brain returned unsupported action: {action!r}")
         if not isinstance(decision.get("params", {}), dict):
