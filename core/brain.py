@@ -29,7 +29,7 @@ Rules:
 5. Use coordinates only when useful coordinates are provided by OCR/observation.
 6. After launching/opening something, verify it before repeating the action.
 7. Break complex goals into one action at a time.
-8. For coding tasks, prefer developer actions (list_files, read_file, write_file, run_command, test_python) over GUI typing.
+8. For coding tasks, prefer developer actions (list_files, read_file, write_file, run_command, test_python, run_python) over GUI typing.
 9. Use the exact action name write_file for writing files, not write_to_file.
 10. If list_files already showed the needed directory, move to the next required action instead of listing it again.
 11. If a command fails, inspect its output, modify the relevant file, and test again.
@@ -233,7 +233,7 @@ Choose ONLY the next single action. Base the decision on the current observation
     def _validate_decision(self, decision: Dict[str, Any]) -> Dict[str, Any]:
         allowed = {"open_url","launch_app","click_text","click","double_click","right_click","drag",
                    "type","press_key","hotkey","scroll","wait","shell","list_files","read_file","write_file","append_file",
-                   "make_directory","copy_file","move_file","run_command","test_python","write_to_file","done","fail"}
+                   "make_directory","copy_file","move_file","run_command","test_python","run_python","write_to_file","done","fail"}
         action = decision.get("action")
         aliases = {
             "write_to_file": "write_file",
