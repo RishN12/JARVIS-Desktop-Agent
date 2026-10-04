@@ -380,7 +380,8 @@ class DesktopAgent:
             cmd = str(params.get("command", ""))
             return self.actions.run_shell(cmd)
         elif action == "list_files":
-            return self.developer.list_files(str(params.get("path", ".")))
+            path = params.get("path") or params.get("directory") or "."
+            return self.developer.list_files(str(path))
         elif action == "read_file":
             path = params.get("path") or params.get("file_path") or params.get("filename") or params.get("file") or params.get("name")
             if not path:
@@ -395,7 +396,11 @@ class DesktopAgent:
                 raise ValueError("write_file requires a file path.")
             return self.developer.write_file(str(path), str(content))
         elif action == "append_file":
-            return self.developer.append_file(str(params.get("path", "")), str(params.get("content", "")))
+            path = params.get("path") or params.get("file_path") or params.get("filename") or params.get("file") or params.get("name")
+            content = params.get("content", params.get("text", params.get("body", "")))
+            if not path:
+                raise ValueError("append_file requires a file path.")
+            return self.developer.append_file(str(path), str(content))
         elif action == "make_directory":
             return self.developer.make_directory(str(params.get("path", "")))
         elif action == "copy_file":

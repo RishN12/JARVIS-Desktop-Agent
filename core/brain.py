@@ -1,5 +1,6 @@
 import json
 import re
+from pathlib import Path
 from typing import Dict, Any, List, Optional
 import httpx
 
@@ -225,7 +226,12 @@ class AgentBrain:
             compact_elements = (screen_elements or [])[:50]
             observation = screen_summary or self._build_screen_observation(compact_elements)
 
-        user_prompt = f"""USER GOAL:
+        workspace = str(Path.cwd())
+        user_prompt = f"""WORKSPACE:
+{workspace}
+Use relative paths inside this workspace for all developer file actions. Do not invent another Windows user's home directory.
+
+USER GOAL:
 {goal}
 
 ACTION HISTORY:
