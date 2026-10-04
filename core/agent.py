@@ -359,6 +359,14 @@ class DesktopAgent:
             return self.developer.run_command(str(params.get("command", "")), int(params.get("timeout", 30)))
         elif action == "test_python":
             return self.developer.test_python(str(params.get("path", "")))
+        elif action == "run_python":
+            args = params.get("args", [])
+            if isinstance(args, str):
+                args = [args]
+            return self.developer.run_python(
+                str(params.get("path", "")), args,
+                int(params.get("timeout", 30))
+            )
         else:
             raise ValueError(f"Unrecognized action '{action}'.")
 

@@ -29,7 +29,7 @@ Rules:
 5. Use coordinates only when useful coordinates are provided by OCR/observation.
 6. After launching/opening something, verify it before repeating the action.
 7. Break complex goals into one action at a time.
-8. For coding tasks, prefer developer actions (list_files, read_file, write_file, run_command, test_python) over GUI typing.
+8. For coding tasks, prefer developer actions (list_files, read_file, write_file, run_command, test_python, run_python) over GUI typing.
 9. Use the exact action name write_file for writing files, not write_to_file.
 10. If list_files already showed the needed directory, move to the next required action instead of listing it again.
 11. If a command fails, inspect its output, modify the relevant file, and test again.
@@ -164,6 +164,15 @@ class AgentBrain:
 
         open_windows = self.get_open_windows()
         history_text = self._build_history_summary(history)
+        recent_success = ""
+        if history:
+            last = history[-1]
+            result_text = str(last.get("result", ""))
+            if result_text.startswith(("Wrote ", "Directory ready:", "Copied ", "Moved ")) or '"success": true' in result_text.lower():
+                recent_success = (
+                    f"IMPORTANT: the previous action {last.get('action')} succeeded. "
+                    "Do not repeat that exact action unless the goal explicitly requires it."
+                )
         # Coding tasks do not need hundreds of OCR entries. Keeping the prompt small
         # makes local models respond much faster.
         developer_goal = bool(re.search(
@@ -192,6 +201,7 @@ CURRENT SCREEN OBSERVATION:
 {observation}
 
 Choose ONLY the next single action. Base the decision on the current observation and history.
+{recent_success}
 """
 
         payload = {
@@ -223,8 +233,20 @@ Choose ONLY the next single action. Base the decision on the current observation
     def _validate_decision(self, decision: Dict[str, Any]) -> Dict[str, Any]:
         allowed = {"open_url","launch_app","click_text","click","double_click","right_click","drag",
                    "type","press_key","hotkey","scroll","wait","shell","list_files","read_file","write_file","append_file",
-                   "make_directory","copy_file","move_file","run_command","test_python","write_to_file","done","fail"}
+                   "make_directory","copy_file","move_file","run_command","test_python","run_python","write_to_file","done","fail"}
         action = decision.get("action")
+        aliases = {
+            "write_to_file": "write_file",
+            "create_file": "write_file",
+            "edit_file": "write_file",
+            "execute_command": "run_command",
+            "run_shell": "run_command",
+            "list_directory": "list_files",
+            "read": "read_file",
+            "write": "write_file",
+        }
+        if action in aliases:
+            decision["action"] = action = aliases[action]
         if action not in allowed:
             raise ValueError(f"Brain returned unsupported action: {action!r}")
         if not isinstance(decision.get("params", {}), dict):

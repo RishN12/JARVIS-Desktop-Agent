@@ -4,8 +4,8 @@ from dataclasses import dataclass
 @dataclass
 class AgentConfig:
     ollama_base_url: str = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434")
-    default_planner_model: str = os.getenv("OLLAMA_PLANNER_MODEL", "qwen2.5:7b")
-    fallback_planner_model: str = os.getenv("OLLAMA_FALLBACK_MODEL", "dolphin3:latest")
+    default_planner_model: str = os.getenv("OLLAMA_PLANNER_MODEL", "qwen2.5:3b")
+    fallback_planner_model: str = os.getenv("OLLAMA_FALLBACK_MODEL", "phi3:mini")
 
     # OCR + Windows state are the fast default. Vision can be enabled when needed.
     vision_enabled: bool = os.getenv("AGENT_VISION_ENABLED", "0").lower() in {"1", "true", "yes", "on"}
