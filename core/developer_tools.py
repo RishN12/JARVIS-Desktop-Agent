@@ -2,6 +2,7 @@ import os
 import json
 import shutil
 import subprocess
+import re
 from pathlib import Path
 from typing import Optional
 
@@ -83,6 +84,47 @@ class DeveloperTools:
 
     def run_command(self, command: str, timeout: int = 30) -> str:
         if not command.strip(): return "No command supplied."
+        # PowerShell splits unquoted Windows paths containing spaces. Repair the
+        # common model-generated form: python C:\path\with spaces\file.py.
+        command = command.strip()
+        m = re.match(r'^(python(?:\.exe)?)\s+(.+)
+            output = (result.stdout or "").strip()
+            if result.stderr: output += ("\n" if output else "") + result.stderr.strip()
+            return json.dumps({"return_code": result.returncode, "success": result.returncode == 0, "output": (output or "(no output)")[-12000:]}, ensure_ascii=False)
+        except subprocess.TimeoutExpired:
+            return json.dumps({"success": False, "timeout": True, "output": f"Command timed out after {timeout}s."})
+
+    def run_python(self, path: str, args: Optional[list] = None, timeout: int = 30) -> str:
+        """Runs a Python file inside the workspace and captures its output."""
+        p = self._path(path)
+        if not p.is_file():
+            return f"Python file does not exist: {path}"
+        cmd = ["python", str(p)] + [str(a) for a in (args or [])]
+        try:
+            result = subprocess.run(
+                cmd, cwd=str(self.workspace), capture_output=True, text=True,
+                timeout=max(1, min(timeout, 120))
+            )
+            output = (result.stdout or "").strip()
+            if result.stderr:
+                output += ("\n" if output else "") + result.stderr.strip()
+            return json.dumps({
+                "return_code": result.returncode,
+                "success": result.returncode == 0,
+                "output": (output or "(no output)")[-12000:]
+            }, ensure_ascii=False)
+        except subprocess.TimeoutExpired:
+            return json.dumps({"success": False, "timeout": True, "output": f"Python program timed out after {timeout}s."})
+
+    def test_python(self, path: str) -> str:
+        p = self._path(path)
+        if not p.is_file(): return f"Python file does not exist: {path}"
+        return self.run_command(f'python -m py_compile "{p}"', timeout=30)
+, command, re.IGNORECASE)
+        if m:
+            target = m.group(2).strip().strip('"')
+            if target.lower().endswith(".py") and " " in target and Path(target).is_absolute():
+                command = f'{m.group(1)} "{target}"'
         try:
             result = subprocess.run(["powershell", "-NoProfile", "-NonInteractive", "-Command", command], cwd=str(self.workspace), capture_output=True, text=True, timeout=max(1, min(timeout, 120)))
             output = (result.stdout or "").strip()
