@@ -174,9 +174,15 @@ class DesktopAgent:
                 screen_elements = self.ocr.read_screen_sync(screenshot)
                 self._log(f"Observed {len(screen_elements)} OCR elements on screen.")
 
+                # Vision gives the planner visual context that OCR alone cannot:
+                # layout, icons, dialogs, controls, and approximate coordinates.
+                screen_description = self.vision.describe(screenshot)
+                self._log(f"Vision: {screen_description[:500]}")
+
                 decision = self.brain.decide_next_action(
                     goal=self.current_goal,
                     history=self.history,
+                    screen_summary=screen_description,
                     screen_elements=screen_elements,
                 )
 
