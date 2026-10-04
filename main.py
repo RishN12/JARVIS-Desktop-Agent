@@ -15,7 +15,7 @@ def run_diagnostics():
     print("=" * 55)
 
     # 1. Test Ollama connectivity
-    print("\n[1/4] Checking Ollama Connection...")
+    print("\n[1/5] Checking Ollama Connection...")
     try:
         import httpx
         from core.config import config
@@ -28,8 +28,8 @@ def run_diagnostics():
     except Exception as e:
         print(f"  [FAIL] Failed to connect to Ollama: {e}")
 
-    # 2. Test Screen capture & Thread desktop attachment
-    print("\n[2/4] Testing Screen Capture & Multi-Monitor Attachment...")
+    # 2. Test Screen capture
+    print("\n[2/5] Testing Screen Capture & Multi-Monitor Attachment...")
     try:
         from core.screen import ScreenManager
         sm = ScreenManager()
@@ -39,9 +39,10 @@ def run_diagnostics():
         print(f"  [OK] Screen captured successfully! Resolution: {img.size}")
     except Exception as e:
         print(f"  [FAIL] Screen capture failed: {e}")
+        img = None
 
     # 3. Test PyAutoGUI & Mouse tracking
-    print("\n[3/4] Testing Mouse Tracking & Failsafe...")
+    print("\n[3/5] Testing Mouse Tracking & Failsafe...")
     try:
         import pyautogui
         pos = pyautogui.position()
@@ -50,8 +51,27 @@ def run_diagnostics():
     except Exception as e:
         print(f"  [FAIL] Mouse tracking failed: {e}")
 
-    # 4. Test Brain JSON planning
-    print("\n[4/4] Testing Local Brain (Ollama) Action Planning...")
+    # 4. Test Screen Vision
+    print("\n[4/5] Testing Screen Vision (Ollama)...")
+    try:
+        if img is None:
+            raise RuntimeError("Screen capture was unavailable.")
+        from core.vision import ScreenVision
+        from core.config import config
+        vision = ScreenVision(model_name=config.vision_model)
+        t0 = time.time()
+        description = vision.describe(img)
+        elapsed = time.time() - t0
+        if description.startswith("Vision unavailable:"):
+            print(f"  [FAIL] Vision request failed after {elapsed:.2f}s: {description}")
+        else:
+            print(f"  [OK] Vision responded in {elapsed:.2f}s:")
+            print(f"     {description[:700]}")
+    except Exception as e:
+        print(f"  [FAIL] Screen vision test failed: {e}")
+
+    # 5. Test Brain JSON planning
+    print("\n[5/5] Testing Local Brain (Ollama) Action Planning...")
     try:
         from core.brain import AgentBrain
         brain = AgentBrain(model_name="qwen2.5:3b")

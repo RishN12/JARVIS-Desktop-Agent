@@ -11,6 +11,7 @@ from .failsafe import FailsafeController
 from .actions import ActionExecutor
 from .brain import AgentBrain
 from .ocr import WindowsOCR
+from .vision import ScreenVision
 from routines.seneca import SenecaRoutine
 
 
@@ -39,6 +40,7 @@ class DesktopAgent:
         self.actions = ActionExecutor(self.failsafe)
         self.brain = AgentBrain()
         self.ocr = WindowsOCR()
+        self.vision = ScreenVision()
 
         self.current_state = AgentState.IDLE
         self.current_goal = ""
@@ -166,9 +168,22 @@ class DesktopAgent:
 
                 # 2. Query brain for next action
                 self._log("Analyzing environment and deciding next step...")
+                # Build a real observation of the current screen for the planner.
+                # The old version captured a screenshot for the GUI but never gave
+                # the planner any screen content. That made it mostly guess.
+                screen_elements = self.ocr.read_screen_sync(screenshot)
+                self._log(f"Observed {len(screen_elements)} OCR elements on screen.")
+
+                # Vision gives the planner visual context that OCR alone cannot:
+                # layout, icons, dialogs, controls, and approximate coordinates.
+                screen_description = self.vision.describe(screenshot)
+                self._log(f"Vision: {screen_description[:500]}")
+
                 decision = self.brain.decide_next_action(
                     goal=self.current_goal,
                     history=self.history,
+                    screen_summary=screen_description,
+                    screen_elements=screen_elements,
                 )
 
                 thought = decision.get("thought", "")
@@ -193,18 +208,26 @@ class DesktopAgent:
                     self._emit_step(step_count, decision, reason, screenshot)
                     return
 
-                # 4. Repetition guard — catch the same action+params looping 3x
+                # 4. Repetition guard.
+                # Never auto-complete just because the model repeated itself:
+                # a repeated action may mean the previous action failed.
                 action_key = f"{action}::{_json.dumps(params, sort_keys=True)}"
                 if action_key == last_action_key:
                     consecutive_repeats += 1
-                    if consecutive_repeats >= 2:
-                        self._log(f"[GUARD] Same action repeated {consecutive_repeats+1}x in a row — task looks done. Auto-completing.")
-                        self._set_state(AgentState.COMPLETED)
-                        self._emit_step(step_count, {"action": "done", "params": {"summary": "Auto-completed: repetition guard detected task was finished."}}, "Auto-completed", screenshot)
-                        return
                 else:
                     consecutive_repeats = 0
                 last_action_key = action_key
+
+                if consecutive_repeats >= 4:
+                    self._log("[GUARD] The same action has been selected repeatedly. Stopping instead of blindly looping.")
+                    self._set_state(AgentState.FAILED)
+                    self._emit_step(
+                        step_count,
+                        {"action": "fail", "params": {"reason": "The planner repeated the same action too many times."}},
+                        "Stopped repeated-action loop.",
+                        screenshot,
+                    )
+                    return
 
                 # 5. Execute the chosen action
                 result = self._dispatch_action(action, params)
@@ -263,6 +286,14 @@ class DesktopAgent:
             x = int(params.get("x", 100))
             y = int(params.get("y", 100))
             return self.actions.right_click(x, y)
+        elif action == "drag":
+            return self.actions.drag(
+                int(params.get("start_x", 100)),
+                int(params.get("start_y", 100)),
+                int(params.get("end_x", 500)),
+                int(params.get("end_y", 500)),
+                float(params.get("duration", 0.5)),
+            )
         elif action == "type":
             text = str(params.get("text", ""))
             return self.actions.type_text(text)
@@ -292,7 +323,7 @@ class DesktopAgent:
             cmd = str(params.get("command", ""))
             return self.actions.run_shell(cmd)
         else:
-            return f"Unrecognized action '{action}', skipping."
+            raise ValueError(f"Unrecognized action '{action}'.")
 
     def _emit_step(self, step_num: int, decision: Dict[str, Any], result: str, screenshot: Optional[Image.Image]):
         if self.on_step_event:
