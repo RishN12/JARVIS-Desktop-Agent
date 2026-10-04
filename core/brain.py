@@ -164,6 +164,15 @@ class AgentBrain:
 
         open_windows = self.get_open_windows()
         history_text = self._build_history_summary(history)
+        recent_success = ""
+        if history:
+            last = history[-1]
+            result_text = str(last.get("result", ""))
+            if result_text.startswith(("Wrote ", "Directory ready:", "Copied ", "Moved ")) or '"success": true' in result_text.lower():
+                recent_success = (
+                    f"IMPORTANT: the previous action {last.get('action')} succeeded. "
+                    "Do not repeat that exact action unless the goal explicitly requires it."
+                )
         # Coding tasks do not need hundreds of OCR entries. Keeping the prompt small
         # makes local models respond much faster.
         developer_goal = bool(re.search(
@@ -192,6 +201,7 @@ CURRENT SCREEN OBSERVATION:
 {observation}
 
 Choose ONLY the next single action. Base the decision on the current observation and history.
+{recent_success}
 """
 
         payload = {
